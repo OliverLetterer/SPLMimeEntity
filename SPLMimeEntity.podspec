@@ -3,7 +3,7 @@ Pod::Spec.new do |s|
   s.version      = "1.0.0"
   s.summary      = "Parsing EML files."
   s.description  = "Objective-C binding to mimetic."
-  s.homepage     = "http://www.codesink.org/mimetic_mime_library.html"
+  s.homepage     = "https://github.com/OliverLetterer/SPLMimeEntity"
   s.license      = 'MIT'
   s.authors          = { "Oliver Letterer" => "oliver.letterer@gmail.com" }
   s.social_media_url = "http://twitter.com/oletterer"
