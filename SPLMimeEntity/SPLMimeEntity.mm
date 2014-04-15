@@ -85,7 +85,7 @@ using namespace mimetic;
 
 @interface SPLMimeEntity ()
 
-@property (nonatomic, assign) MimeEntity mimeEntity;
+@property (nonatomic, assign) MimeEntity *mimeEntity;
 @property (nonatomic, strong) NSString *string;
 
 @end
@@ -96,25 +96,29 @@ using namespace mimetic;
 
 #pragma mark - Initialization
 
-- (instancetype)initWithMimeEntitiy:(const MimeEntity &)mimeEntitiy
+- (instancetype)initWithMimeEntitiy:(MimeEntity *)mimeEntitiy
 {
     if (self = [super init]) {
         _mimeEntity = mimeEntitiy;
 
-        _sender = [[SPLMailbox alloc] initWithMailbox:_mimeEntity.header().sender()];
+        _sender = [[SPLMailbox alloc] initWithMailbox:_mimeEntity->header().sender()];
 
-        if (_mimeEntity.header().hasField("Subject")) {
-            _subject = [NSString stringWithUTF8String:_mimeEntity.header().subject().c_str()];
+        if (_mimeEntity->header().hasField("Subject")) {
+            _subject = [NSString stringWithUTF8String:_mimeEntity->header().subject().c_str()];
         }
 
-        if (_mimeEntity.header().messageid().str().length() > 0) {
-            _messageId = [NSString stringWithUTF8String:_mimeEntity.header().messageid().str().c_str()];
+        if (_mimeEntity->header().hasField("Date")) {
+            _timeStamp = [NSString stringWithUTF8String:_mimeEntity->header().field("Date").value().c_str()];
+        }
+
+        if (_mimeEntity->header().messageid().str().length() > 0) {
+            _messageId = [NSString stringWithUTF8String:_mimeEntity->header().messageid().str().c_str()];
         }
 
         {
             NSMutableArray *array = [NSMutableArray array];
-            auto i = _mimeEntity.header().from().begin();
-            while (i != _mimeEntity.header().from().end()) {
+            auto i = _mimeEntity->header().from().begin();
+            while (i != _mimeEntity->header().from().end()) {
                 [array addObject:[[SPLMailbox alloc] initWithMailbox:*i] ];
                 ++i;
             }
@@ -123,8 +127,8 @@ using namespace mimetic;
 
         {
             NSMutableArray *array = [NSMutableArray array];
-            auto i = _mimeEntity.header().to().begin();
-            while (i != _mimeEntity.header().to().end()) {
+            auto i = _mimeEntity->header().to().begin();
+            while (i != _mimeEntity->header().to().end()) {
                 [array addObject:[[SPLMailbox alloc] initWithMailbox:i->mailbox()] ];
                 ++i;
             }
@@ -133,8 +137,8 @@ using namespace mimetic;
 
         {
             NSMutableArray *array = [NSMutableArray array];
-            auto i = _mimeEntity.header().replyto().begin();
-            while (i != _mimeEntity.header().replyto().end()) {
+            auto i = _mimeEntity->header().replyto().begin();
+            while (i != _mimeEntity->header().replyto().end()) {
                 [array addObject:[[SPLMailbox alloc] initWithMailbox:i->mailbox()] ];
                 ++i;
             }
@@ -143,8 +147,8 @@ using namespace mimetic;
 
         {
             NSMutableArray *array = [NSMutableArray array];
-            auto i = _mimeEntity.header().cc().begin();
-            while (i != _mimeEntity.header().cc().end()) {
+            auto i = _mimeEntity->header().cc().begin();
+            while (i != _mimeEntity->header().cc().end()) {
                 [array addObject:[[SPLMailbox alloc] initWithMailbox:i->mailbox()] ];
                 ++i;
             }
@@ -153,20 +157,20 @@ using namespace mimetic;
 
         {
             NSMutableArray *array = [NSMutableArray array];
-            auto i = _mimeEntity.header().bcc().begin();
-            while (i != _mimeEntity.header().bcc().end()) {
+            auto i = _mimeEntity->header().bcc().begin();
+            while (i != _mimeEntity->header().bcc().end()) {
                 [array addObject:[[SPLMailbox alloc] initWithMailbox:i->mailbox()] ];
                 ++i;
             }
             _bcc = [array copy];
         }
 
-        _body = [NSString stringWithUTF8String:_mimeEntity.body().c_str()];
+        _body = [NSString stringWithUTF8String:_mimeEntity->body().c_str()];
 
         {
             NSMutableArray *array = [NSMutableArray array];
-            auto i = _mimeEntity.body().parts().begin();
-            while (i != _mimeEntity.body().parts().end()) {
+            auto i = _mimeEntity->body().parts().begin();
+            while (i != _mimeEntity->body().parts().end()) {
                 [array addObject:[[SPLBodyPart alloc] initWithMimeEntitiy:**i] ];
                 ++i;
             }
@@ -186,7 +190,7 @@ using namespace mimetic;
     istringstream str(string.UTF8String);
 
     istreambuf_iterator<char> bit(str), eit;
-    return [self initWithMimeEntitiy:MimeEntity(bit,eit)];
+    return [self initWithMimeEntitiy:new MimeEntity(bit,eit)];
 }
 
 - (NSString *)description
@@ -206,7 +210,9 @@ using namespace mimetic;
 
 - (void)dealloc
 {
-    
+    if (_mimeEntity) {
+        delete _mimeEntity;
+    }
 }
 
 #pragma mark - Private category implementation ()

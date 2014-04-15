@@ -40,6 +40,8 @@
 @property (nonatomic, readonly) NSArray *to;
 
 @property (nonatomic, readonly) NSString *subject;
+@property (nonatomic, readonly) NSString *timeStamp;
+
 @property (nonatomic, readonly) NSArray *replyTo;
 @property (nonatomic, readonly) NSArray *cc;
 @property (nonatomic, readonly) NSArray *bcc;
