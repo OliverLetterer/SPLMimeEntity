@@ -19,15 +19,6 @@
 
 @end
 
-@interface SPLBodyPart : NSObject
-
-@property (nonatomic, readonly) NSString *name;
-
-@property (nonatomic, readonly) NSString *contentType;
-@property (nonatomic, readonly) NSData *data;
-
-@end
-
 
 
 /**
@@ -35,12 +26,20 @@
  */
 @interface SPLMimeEntity : NSObject
 
+- (NSString *)valueForHeaderKey:(NSString *)headerKey;
+
+
+
+- (instancetype)initWithString:(NSString *)string;
+
+// EML properties
 @property (nonatomic, readonly) SPLMailbox *sender;
 @property (nonatomic, readonly) NSArray *from;
 @property (nonatomic, readonly) NSArray *to;
 
 @property (nonatomic, readonly) NSString *subject;
 @property (nonatomic, readonly) NSString *timeStamp;
+@property (nonatomic, readonly) NSString *contentType;
 
 @property (nonatomic, readonly) NSArray *replyTo;
 @property (nonatomic, readonly) NSArray *cc;
@@ -48,9 +47,13 @@
 
 @property (nonatomic, readonly) NSString *messageId;
 
-@property (nonatomic, readonly) NSString *body;
 @property (nonatomic, readonly) NSArray *bodyParts;
 
-- (instancetype)initWithString:(NSString *)string;
+- (NSArray *)inlineBodyParts;
+- (NSArray *)attachmentBodyParts;
+
+// body part
+@property (nonatomic, readonly) NSData *bodyData;
+@property (nonatomic, readonly) NSString *filename;
 
 @end

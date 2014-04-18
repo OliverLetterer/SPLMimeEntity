@@ -15,6 +15,30 @@
 using namespace std;
 using namespace mimetic;
 
+inline NSString *MimeEntityGetHeaderValue(MimeEntity *mimeEntity, NSString *headerKey)
+{
+    if (mimeEntity->header().hasField(headerKey.UTF8String)) {
+        return [NSString stringWithUTF8String:mimeEntity->header().field(headerKey.UTF8String).value().c_str()];
+    }
+
+    return nil;
+}
+
+static NSData *dataFromStringWithEncoding(NSString *bodyString, NSString *encoding)
+{
+    if ([encoding.lowercaseString isEqualToString:@"base64"]) {
+        return [bodyString dataFromBase64EncodedString];
+    } else {
+        if ([encoding rangeOfString:@"quoted-printable"].length > 0) {
+            bodyString = [bodyString stringByReplacingOccurrencesOfString:@"=\r\n" withString:@""];
+            bodyString = [bodyString stringByReplacingOccurrencesOfString:@"=" withString:@"%"];
+            bodyString = [bodyString stringByReplacingPercentEscapesUsingEncoding:NSUTF8StringEncoding];
+        }
+
+        return [bodyString dataUsingEncoding:NSUTF8StringEncoding];
+    }
+}
+
 
 
 @implementation SPLMailbox
@@ -46,47 +70,11 @@ using namespace mimetic;
 
 
 
-@implementation SPLBodyPart
-
-- (instancetype)initWithMimeEntitiy:(const MimeEntity &)mimeEntity
-{
-    if (self = [super init]) {
-        _contentType = [NSString stringWithUTF8String:mimeEntity.header().contentType().str().c_str()];
-
-        NSString *encoding = [NSString stringWithUTF8String:mimeEntity.header().contentTransferEncoding().str().c_str()];
-        NSString *bodyString = [NSString stringWithUTF8String:mimeEntity.body().c_str()];
-
-        if ([encoding.lowercaseString isEqualToString:@"base64"]) {
-            _data = [bodyString dataFromBase64EncodedString];
-        } else {
-            _data = [bodyString dataUsingEncoding:NSUTF8StringEncoding];
-        }
-
-        if (mimeEntity.header().hasField("Subject")) {
-            _name = [NSString stringWithUTF8String:mimeEntity.header().subject().c_str()];
-        }
-    }
-    return self;
-}
-
-- (NSString *)description
-{
-    NSStringEncoding encoding = [self.contentType rangeOfString:@"utf8"].location != NSNotFound ? NSUTF8StringEncoding : NSASCIIStringEncoding;
-
-    NSString *string = [[NSString alloc] initWithData:_data encoding:encoding];
-    NSString *substring = string.length > 100 ? [[string substringToIndex:100] stringByAppendingString:@"..."] : string;
-
-    return [NSString stringWithFormat:@"%@[%@ - %@]: %@", [super description], self.name, self.contentType, substring];
-}
-
-@end
-
-
-
 @interface SPLMimeEntity ()
 
 @property (nonatomic, assign) MimeEntity *mimeEntity;
 @property (nonatomic, strong) NSString *string;
+@property (nonatomic, assign) BOOL retainsOwnership;
 
 @end
 
@@ -96,24 +84,72 @@ using namespace mimetic;
 
 #pragma mark - Initialization
 
-- (instancetype)initWithMimeEntitiy:(MimeEntity *)mimeEntitiy
+- (NSArray *)inlineBodyParts
+{
+    NSMutableArray *inlineBodyParts = [NSMutableArray array];
+
+    for (SPLMimeEntity *bodyPart in self.bodyParts) {
+        if (bodyPart.bodyParts.count > 0) {
+            [inlineBodyParts addObjectsFromArray:bodyPart.inlineBodyParts];
+        } else if ([[bodyPart valueForHeaderKey:@"Content-Disposition"].lowercaseString rangeOfString:@"attachment"].length == 0) {
+            [inlineBodyParts addObject:bodyPart];
+        }
+    }
+
+    return [inlineBodyParts copy];
+}
+
+- (NSArray *)attachmentBodyParts
+{
+    NSMutableArray *attachmentBodyParts = [NSMutableArray array];
+
+    for (SPLMimeEntity *bodyPart in self.bodyParts) {
+        if (bodyPart.bodyParts.count > 0) {
+            [attachmentBodyParts addObjectsFromArray:bodyPart.attachmentBodyParts];
+        } else if ([[bodyPart valueForHeaderKey:@"Content-Disposition"].lowercaseString rangeOfString:@"attachment"].length > 0) {
+            [attachmentBodyParts addObject:bodyPart];
+        }
+    }
+
+    return [attachmentBodyParts copy];
+}
+
+- (NSString *)filename
+{
+    NSString *contentDisposition = [self valueForHeaderKey:@"Content-Disposition"];
+    if ([contentDisposition.lowercaseString rangeOfString:@"attachment"].length > 0) {
+        for (__strong NSString *keyValuePairString in [contentDisposition componentsSeparatedByString:@";"]) {
+            keyValuePairString = [keyValuePairString stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+            NSArray *keyValuePair = [keyValuePairString componentsSeparatedByString:@"="];
+
+            if (keyValuePair.count == 2) {
+                NSString *key = keyValuePair[0];
+                NSString *value = keyValuePair[1];
+
+                if ([key isEqual:@"filename"] || [key isEqual:@"name"]) {
+                    NSMutableCharacterSet *characterSet = [NSMutableCharacterSet whitespaceAndNewlineCharacterSet];
+                    [characterSet addCharactersInString:@"\""];
+                    return [value stringByTrimmingCharactersInSet:characterSet];
+                }
+            }
+        }
+    }
+
+    return nil;
+}
+
+- (instancetype)initWithMimeEntitiy:(MimeEntity *)mimeEntitiy retainOwnership:(BOOL)retainOwnership
 {
     if (self = [super init]) {
         _mimeEntity = mimeEntitiy;
+        _retainsOwnership = retainOwnership;
 
         _sender = [[SPLMailbox alloc] initWithMailbox:_mimeEntity->header().sender()];
 
-        if (_mimeEntity->header().hasField("Subject")) {
-            _subject = [NSString stringWithUTF8String:_mimeEntity->header().subject().c_str()];
-        }
-
-        if (_mimeEntity->header().hasField("Date")) {
-            _timeStamp = [NSString stringWithUTF8String:_mimeEntity->header().field("Date").value().c_str()];
-        }
-
-        if (_mimeEntity->header().messageid().str().length() > 0) {
-            _messageId = [NSString stringWithUTF8String:_mimeEntity->header().messageid().str().c_str()];
-        }
+        _subject = [self valueForHeaderKey:@"Subject"];
+        _timeStamp = [self valueForHeaderKey:@"Date"];
+        _messageId = [self valueForHeaderKey:@"Message-ID"];
+        _contentType = [self valueForHeaderKey:@"Content-Type"];
 
         {
             NSMutableArray *array = [NSMutableArray array];
@@ -165,16 +201,18 @@ using namespace mimetic;
             _bcc = [array copy];
         }
 
-        _body = [NSString stringWithUTF8String:_mimeEntity->body().c_str()];
+        _bodyData = dataFromStringWithEncoding([NSString stringWithUTF8String:_mimeEntity->body().c_str()], [self valueForHeaderKey:@"Content-Transfer-Encoding"]);
 
         {
-            NSMutableArray *array = [NSMutableArray array];
+            NSMutableArray *bodyParts = [NSMutableArray array];
+
             auto i = _mimeEntity->body().parts().begin();
             while (i != _mimeEntity->body().parts().end()) {
-                [array addObject:[[SPLBodyPart alloc] initWithMimeEntitiy:**i] ];
+                [bodyParts addObject:[[SPLMimeEntity alloc] initWithMimeEntitiy:*i retainOwnership:NO] ];
                 ++i;
             }
-            _bodyParts = [array copy];
+
+            _bodyParts = [bodyParts copy];
         }
     }
 
@@ -188,9 +226,9 @@ using namespace mimetic;
     }
 
     istringstream str(string.UTF8String);
-
     istreambuf_iterator<char> bit(str), eit;
-    return [self initWithMimeEntitiy:new MimeEntity(bit,eit)];
+
+    return [self initWithMimeEntitiy:new MimeEntity(bit,eit) retainOwnership:YES];
 }
 
 - (NSString *)description
@@ -206,12 +244,17 @@ using namespace mimetic;
             , [super description], self.subject, self.sender, self.from, self.to, self.replyTo, self.cc, self.bcc, self.bodyParts];
 }
 
+- (NSString *)valueForHeaderKey:(NSString *)headerKey
+{
+    return MimeEntityGetHeaderValue(_mimeEntity, headerKey);
+}
+
 #pragma mark - Memory management
 
 - (void)dealloc
 {
-    if (_mimeEntity) {
-        delete _mimeEntity;
+    if (_mimeEntity && _retainsOwnership) {
+        delete _mimeEntity, _mimeEntity = NULL;
     }
 }
 
