@@ -7,7 +7,6 @@
 //
 
 #import "SPLMimeEntity.h"
-#import <NSString+CTOpenSSL.h>
 
 #include <iostream>
 #include <mimetic/mimetic.h>
@@ -27,7 +26,7 @@ inline NSString *MimeEntityGetHeaderValue(MimeEntity *mimeEntity, NSString *head
 static NSData *dataFromStringWithEncoding(NSString *bodyString, NSString *encoding)
 {
     if ([encoding.lowercaseString isEqualToString:@"base64"]) {
-        return [bodyString dataFromBase64EncodedString];
+        return [[bodyString dataUsingEncoding:NSUTF8StringEncoding] base64EncodedDataWithOptions:0];
     } else {
         if ([encoding rangeOfString:@"quoted-printable"].length > 0) {
             bodyString = [bodyString stringByReplacingOccurrencesOfString:@"=\r\n" withString:@""];
